@@ -2,22 +2,21 @@ use std::{borrow::Cow, time::Duration};
 
 use axum::{
     extract::MatchedPath,
-    http::{Request, Response},
+    http::{request, Request, Response},
 };
 use opentelemetry::{global, trace::SpanKind, trace::TracerProvider};
+use opentelemetry_http::{HeaderExtractor, HeaderInjector};
+use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_semantic_conventions::{
     attribute::OTEL_STATUS_CODE,
     trace::{HTTP_REQUEST_METHOD, HTTP_RESPONSE_STATUS_CODE, HTTP_ROUTE, NETWORK_PROTOCOL_VERSION},
 };
 use tower_http::{
     classify::{ServerErrorsAsFailures, SharedClassifier},
-    trace::{MakeSpan, OnFailure, OnResponse, TraceLayer},
+    trace::{MakeSpan, OnFailure, OnRequest, OnResponse, TraceLayer},
 };
 use tracing::{field::Empty, Span};
 use tracing_subscriber::prelude::*;
-
-// TODO: TextMapPropagator?
-// TODO: HeaderExtractor
 
 #[derive(Clone)]
 pub struct OtelMakeSpan {
@@ -27,6 +26,9 @@ pub struct OtelMakeSpan {
 impl<B> MakeSpan<B> for OtelMakeSpan {
     fn make_span(&mut self, request: &Request<B>) -> Span {
         if self.span_kind == SpanKind::Server {
+            global::get_text_map_propagator(|propagator| {
+                propagator.extract(&HeaderExtractor(request.headers()));
+            });
             let path_template = request
                 .extensions()
                 .get::<MatchedPath>()
@@ -58,6 +60,22 @@ impl<B> MakeSpan<B> for OtelMakeSpan {
         };
     }
 }
+
+// TODO: inject tracing headers into http client e.g. https://github.com/open-telemetry/opentelemetry-rust/blob/main/examples/tracing-http-propagator/src/client.rs
+// Or might use `HttpClient` trait from opentelemetry_http https://docs.rs/opentelemetry-http/latest/src/opentelemetry_http/lib.rs.html#68
+//#[derive(Clone)]
+//pub struct OtelOnRequest {
+//    span_kind: SpanKind,
+//}
+//impl<B> OnRequest<B> for OtelOnRequest {
+//    fn on_request(&mut self, request: &Request<B>, span: &Span) {
+//        if self.span_kind == SpanKind::Client {
+//            global::get_text_map_propagator(|propagator| {
+//                propagator.inject(&mut HeaderInjector(request.headers_mut()));
+//            });
+//        }
+//    }
+//}
 
 #[derive(Clone)]
 pub struct OtelOnResponse;
@@ -130,6 +148,8 @@ fn tracer(
     service_name: impl Into<Cow<'static, str>> + Clone,
     service_version: impl Into<opentelemetry::Value>,
 ) -> opentelemetry_sdk::trace::Tracer {
+    global::set_text_map_propagator(TraceContextPropagator::new());
+
     let provider = opentelemetry_sdk::trace::TracerProvider::builder()
         .with_resource(resource(service_name.clone().into(), service_version))
         .with_batch_exporter(
