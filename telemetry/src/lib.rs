@@ -4,8 +4,13 @@ use axum::{
     extract::MatchedPath,
     http::{request, Request, Response},
 };
-use opentelemetry::{global, trace::SpanKind, trace::TracerProvider};
+use opentelemetry::{
+    global,
+    trace::{SpanKind, TraceContextExt, TracerProvider},
+    Context,
+};
 use opentelemetry_http::{HeaderExtractor, HeaderInjector};
+use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_semantic_conventions::{
     attribute::OTEL_STATUS_CODE,
@@ -16,6 +21,7 @@ use tower_http::{
     trace::{MakeSpan, OnFailure, OnRequest, OnResponse, TraceLayer},
 };
 use tracing::{field::Empty, Span};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::prelude::*;
 
 #[derive(Clone)]
@@ -26,16 +32,18 @@ pub struct OtelMakeSpan {
 impl<B> MakeSpan<B> for OtelMakeSpan {
     fn make_span(&mut self, request: &Request<B>) -> Span {
         if self.span_kind == SpanKind::Server {
-            global::get_text_map_propagator(|propagator| {
-                propagator.extract(&HeaderExtractor(request.headers()));
+            let parent_cx: Context = global::get_text_map_propagator(|propagator| {
+                propagator.extract(&HeaderExtractor(request.headers()))
             });
+            let has_parent_span = parent_cx.span().span_context().is_valid();
+
             let path_template = request
                 .extensions()
                 .get::<MatchedPath>()
                 .map(MatchedPath::as_str)
                 .unwrap_or("{unknown}");
 
-            return tracing::info_span!(
+            let span = tracing::info_span!(
                 "request",
                 otel.name = format!("{} {}", request.method(), path_template),
                 span.kind = ?self.span_kind,
@@ -45,6 +53,12 @@ impl<B> MakeSpan<B> for OtelMakeSpan {
                 { HTTP_ROUTE } = %request.uri().path(),
                 { NETWORK_PROTOCOL_VERSION } = ?request.version(),
             );
+
+            if has_parent_span {
+                span.set_parent(parent_cx);
+            }
+
+            return span;
         } else {
             // TODO: Refine tags that a client would use e.g. reqwest
             return tracing::info_span!(
@@ -154,7 +168,8 @@ fn tracer(
         .with_resource(resource(service_name.clone().into(), service_version))
         .with_batch_exporter(
             opentelemetry_otlp::SpanExporter::builder()
-                .with_tonic()
+                .with_http()
+                .with_timeout(Duration::from_secs(3))
                 .build()
                 .unwrap(),
             opentelemetry_sdk::runtime::Tokio,
