@@ -1,5 +1,10 @@
 # Axum server with Opentelemetry & OTLP
 
+Quickstart
+```bash
+RUST_LOG=info cargo watch -x 'run --package api'
+```
+
 - OTLP exporter
 - Spans with some default opentelemetry tags
 - Run jaeger OTLP container with
