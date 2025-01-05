@@ -4,11 +4,9 @@ use std::net::Ipv4Addr;
 
 use tower::ServiceBuilder;
 
-mod telemetry;
-
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-    let _guard = telemetry::init_tracing();
+    let _guard = telemetry::init_tracing(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
 
     let service = ServiceBuilder::new().layer(telemetry::trace_layer());
 

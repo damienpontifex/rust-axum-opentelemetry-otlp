@@ -34,13 +34,19 @@ checksum = "34ac096ce696dc2fcabef30516bb13c0a68a11d30131d3df6f04711467681b04"
 
 [[package]]
 name = "api"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "axum 0.8.1",
- "telemetry",
+ "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry-semantic-conventions",
+ "opentelemetry_sdk",
  "tokio",
  "tower 0.5.2",
+ "tower-http",
  "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -987,22 +993,6 @@ name = "sync_wrapper"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0bf256ce5efdfa370213c1dabab5935a12e49f2c58d15e9eac2870d3b4f27263"
-
-[[package]]
-name = "telemetry"
-version = "0.1.0"
-dependencies = [
- "axum 0.8.1",
- "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry-semantic-conventions",
- "opentelemetry_sdk",
- "tokio",
- "tower-http",
- "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
-]
 
 [[package]]
 name = "thiserror"

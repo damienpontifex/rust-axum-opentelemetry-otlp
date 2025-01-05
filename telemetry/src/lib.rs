@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{borrow::Cow, time::Duration};
 
 use axum::{
     extract::MatchedPath,
@@ -17,7 +17,7 @@ use tracing::{field::Empty, Span};
 use tracing_subscriber::prelude::*;
 
 #[derive(Clone)]
-pub(crate) struct OtelMakeSpan;
+pub struct OtelMakeSpan;
 impl<B> MakeSpan<B> for OtelMakeSpan {
     fn make_span(&mut self, request: &Request<B>) -> Span {
         let matched_path = request
@@ -40,7 +40,7 @@ impl<B> MakeSpan<B> for OtelMakeSpan {
 }
 
 #[derive(Clone)]
-pub(crate) struct OtelOnResponse;
+pub struct OtelOnResponse;
 impl<B> OnResponse<B> for OtelOnResponse {
     fn on_response(self, response: &Response<B>, _latency: Duration, span: &Span) {
         let status_code = response.status().as_u16();
@@ -51,14 +51,14 @@ impl<B> OnResponse<B> for OtelOnResponse {
 }
 
 #[derive(Clone)]
-pub(crate) struct OtelOnFailure;
+pub struct OtelOnFailure;
 impl<B> OnFailure<B> for OtelOnFailure {
     fn on_failure(&mut self, _failure_classification: B, _latency: Duration, span: &Span) {
         span.record(OTEL_STATUS_CODE, "error");
     }
 }
 
-pub(crate) fn trace_layer() -> TraceLayer<
+pub fn trace_layer() -> TraceLayer<
     SharedClassifier<ServerErrorsAsFailures>,
     OtelMakeSpan,
     (),
@@ -76,7 +76,10 @@ pub(crate) fn trace_layer() -> TraceLayer<
         .on_failure(OtelOnFailure)
 }
 
-fn resource() -> opentelemetry_sdk::Resource {
+fn resource(
+    service_name: impl Into<opentelemetry::Value>,
+    service_version: impl Into<opentelemetry::Value>,
+) -> opentelemetry_sdk::Resource {
     use opentelemetry::KeyValue;
     use opentelemetry_semantic_conventions::{
         resource::{SERVICE_NAME, SERVICE_VERSION},
@@ -85,16 +88,19 @@ fn resource() -> opentelemetry_sdk::Resource {
 
     opentelemetry_sdk::Resource::from_schema_url(
         [
-            KeyValue::new(SERVICE_NAME, env!("CARGO_PKG_NAME")),
-            KeyValue::new(SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
+            KeyValue::new(SERVICE_NAME, service_name),
+            KeyValue::new(SERVICE_VERSION, service_version),
         ],
         SCHEMA_URL,
     )
 }
 
-fn tracer() -> opentelemetry_sdk::trace::Tracer {
+fn tracer(
+    service_name: impl Into<Cow<'static, str>> + Clone,
+    service_version: impl Into<opentelemetry::Value>,
+) -> opentelemetry_sdk::trace::Tracer {
     let provider = opentelemetry_sdk::trace::TracerProvider::builder()
-        .with_resource(resource())
+        .with_resource(resource(service_name.clone().into(), service_version))
         .with_batch_exporter(
             opentelemetry_otlp::SpanExporter::builder()
                 .with_tonic()
@@ -106,10 +112,10 @@ fn tracer() -> opentelemetry_sdk::trace::Tracer {
 
     global::set_tracer_provider(provider.clone());
 
-    provider.tracer(env!("CARGO_PKG_NAME"))
+    provider.tracer(service_name)
 }
 
-pub(crate) struct TracingGuard;
+pub struct TracingGuard;
 impl Drop for TracingGuard {
     fn drop(&mut self) {
         opentelemetry::global::shutdown_tracer_provider();
@@ -117,7 +123,10 @@ impl Drop for TracingGuard {
 }
 
 #[must_use]
-pub(crate) fn init_tracing() -> TracingGuard {
+pub fn init_tracing(
+    service_name: impl Into<Cow<'static, str>> + Clone,
+    service_version: impl Into<opentelemetry::Value>,
+) -> TracingGuard {
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::from_default_env())
         .with(
@@ -128,7 +137,7 @@ pub(crate) fn init_tracing() -> TracingGuard {
         )
         .with(
             tracing_opentelemetry::layer()
-                .with_tracer(tracer())
+                .with_tracer(tracer(service_name, service_version))
                 .with_location(false),
         )
         .init();

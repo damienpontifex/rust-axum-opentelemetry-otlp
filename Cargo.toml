@@ -1,17 +1,12 @@
-[package]
-name = "api"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+members = [
+  "api",
+  "telemetry",
+]
 
-[dependencies]
+resolver = "2"
+
+[workspace.dependencies]
 axum = "0.8.1"
-opentelemetry = "0.27.1"
-opentelemetry-otlp = "0.27.0"
-opentelemetry-semantic-conventions = "0.27.0"
-opentelemetry_sdk = { version = "0.27.1", features = ["rt-tokio"] }
-tokio = { version = "1.42.0", features = ["macros", "rt-multi-thread"] }
-tower = "0.5.2"
-tower-http = { version = "0.6.2", features = ["trace"] }
 tracing = "0.1.41"
-tracing-opentelemetry = "0.28.0"
-tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json", "registry"] }
+
