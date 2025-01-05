@@ -16,6 +16,9 @@ use tower_http::{
 use tracing::{field::Empty, Span};
 use tracing_subscriber::prelude::*;
 
+// TODO: TextMapPropagator?
+// TODO: HeaderExtractor
+
 #[derive(Clone)]
 pub struct OtelMakeSpan {
     span_kind: SpanKind,
