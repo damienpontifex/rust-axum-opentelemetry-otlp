@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use axum::{
     extract::MatchedPath,
-    http::{Request, Response},
+    http::{header::USER_AGENT, Request, Response},
 };
 use opentelemetry::{
     global,
@@ -12,7 +12,10 @@ use opentelemetry::{
 use opentelemetry_http::HeaderExtractor;
 use opentelemetry_semantic_conventions::{
     attribute::OTEL_STATUS_CODE,
-    trace::{HTTP_REQUEST_METHOD, HTTP_RESPONSE_STATUS_CODE, HTTP_ROUTE, NETWORK_PROTOCOL_VERSION},
+    trace::{
+        HTTP_REQUEST_METHOD, HTTP_RESPONSE_STATUS_CODE, HTTP_ROUTE, NETWORK_PROTOCOL_VERSION,
+        URL_FULL, USER_AGENT_ORIGINAL,
+    },
 };
 use tower_http::{
     classify::{ServerErrorsAsFailures, SharedClassifier},
@@ -52,7 +55,9 @@ impl<B> MakeSpan<B> for OtelMakeSpan {
                 { HTTP_REQUEST_METHOD } = ?request.method(),
                 { HTTP_RESPONSE_STATUS_CODE } = Empty,
                 { HTTP_ROUTE } = %request.uri().path(),
+                { URL_FULL } = %request.uri().path(),
                 { NETWORK_PROTOCOL_VERSION } = ?request.version(),
+                { USER_AGENT_ORIGINAL } = %request.headers().get(USER_AGENT).and_then(|h| h.to_str().ok()).unwrap_or_default(),
             );
 
             if has_parent_span {
