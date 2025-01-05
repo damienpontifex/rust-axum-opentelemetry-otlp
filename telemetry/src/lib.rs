@@ -17,25 +17,42 @@ use tracing::{field::Empty, Span};
 use tracing_subscriber::prelude::*;
 
 #[derive(Clone)]
-pub struct OtelMakeSpan;
+pub struct OtelMakeSpan {
+    span_kind: SpanKind,
+}
+
 impl<B> MakeSpan<B> for OtelMakeSpan {
     fn make_span(&mut self, request: &Request<B>) -> Span {
-        let matched_path = request
-            .extensions()
-            .get::<MatchedPath>()
-            .map(MatchedPath::as_str)
-            .unwrap_or("{unknown}");
+        if self.span_kind == SpanKind::Server {
+            let path_template = request
+                .extensions()
+                .get::<MatchedPath>()
+                .map(MatchedPath::as_str)
+                .unwrap_or("{unknown}");
 
-        tracing::info_span!(
-            "request",
-            otel.name = format!("{} {}", request.method(), matched_path),
-            span.kind = ?SpanKind::Server,
-            { OTEL_STATUS_CODE } = Empty,
-            { HTTP_REQUEST_METHOD } = ?request.method(),
-            { HTTP_RESPONSE_STATUS_CODE } = Empty,
-            { HTTP_ROUTE } = %request.uri().path(),
-            { NETWORK_PROTOCOL_VERSION } = ?request.version(),
-        )
+            return tracing::info_span!(
+                "request",
+                otel.name = format!("{} {}", request.method(), path_template),
+                span.kind = ?self.span_kind,
+                { OTEL_STATUS_CODE } = Empty,
+                { HTTP_REQUEST_METHOD } = ?request.method(),
+                { HTTP_RESPONSE_STATUS_CODE } = Empty,
+                { HTTP_ROUTE } = %request.uri().path(),
+                { NETWORK_PROTOCOL_VERSION } = ?request.version(),
+            );
+        } else {
+            // TODO: Refine tags that a client would use e.g. reqwest
+            return tracing::info_span!(
+                "request",
+                otel.name = ?request.method(),
+                span.kind = ?self.span_kind,
+                url.full = %request.uri(),
+                { OTEL_STATUS_CODE } = Empty,
+                { HTTP_REQUEST_METHOD } = ?request.method(),
+                { HTTP_RESPONSE_STATUS_CODE } = Empty,
+                { NETWORK_PROTOCOL_VERSION } = ?request.version(),
+            );
+        };
     }
 }
 
@@ -58,7 +75,14 @@ impl<B> OnFailure<B> for OtelOnFailure {
     }
 }
 
-pub fn trace_layer() -> TraceLayer<
+pub enum TracingFor {
+    Server,
+    Client,
+}
+
+pub fn trace_layer(
+    tracing_for: TracingFor,
+) -> TraceLayer<
     SharedClassifier<ServerErrorsAsFailures>,
     OtelMakeSpan,
     (),
@@ -67,8 +91,12 @@ pub fn trace_layer() -> TraceLayer<
     (),
     OtelOnFailure,
 > {
+    let span_kind = match tracing_for {
+        TracingFor::Server => SpanKind::Server,
+        TracingFor::Client => SpanKind::Client,
+    };
     TraceLayer::new_for_http()
-        .make_span_with(OtelMakeSpan)
+        .make_span_with(OtelMakeSpan { span_kind })
         .on_request(())
         .on_response(OtelOnResponse)
         .on_body_chunk(())
