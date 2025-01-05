@@ -95,8 +95,10 @@ async fn main() -> std::io::Result<()> {
                 )
             })
             .on_response(|response: &Response, _latency: Duration, span: &Span| {
-                span.record(OTEL_STATUS_CODE, "ok");
-                span.record(HTTP_RESPONSE_STATUS_CODE, response.status().as_u16());
+                let status_code = response.status().as_u16();
+                let is_failure = if status_code < 300 { "ok" } else { "error" };
+                span.record(OTEL_STATUS_CODE, is_failure);
+                span.record(HTTP_RESPONSE_STATUS_CODE, status_code);
             }),
     );
 
